@@ -144,33 +144,33 @@ jobs:
             echo "critical_found=false" >> $GITHUB_OUTPUT
           fi
       
-      - name: Send Email Alert with Report (Brevo)
-        if: steps.snyk-check.outputs.critical_found == 'true'
-        run: |
-          REPORT_BASE64=$(base64 -w 0 snyk-report.html)
+      # - name: Send Email Alert with Report (Brevo)
+      #   if: steps.snyk-check.outputs.critical_found == 'true'
+      #   run: |
+      #     REPORT_BASE64=$(base64 -w 0 snyk-report.html)
 
-          curl --request POST \
-            --url https://api.brevo.com/v3/smtp/email \
-            --header "accept: application/json" \
-            --header "api-key: $BREVO_API_KEY" \
-            --header "content-type: application/json" \
-            --data "{
-              \"sender\": {
-                \"name\": \"CI Pipeline\",
-                \"email\": \"fitforge360.in@gmail.com\"
-              },
-              \"to\": [{
-                \"email\": \"fitforge360.in@gmail.com\"
-              }],
-              \"subject\": \"🚨 Critical Vulnerabilities Detected\",
-              \"textContent\": \"Critical vulnerabilities found. See attached Snyk report.\",
-              \"attachment\": [{
-                \"name\": \"snyk-report.html\",
-                \"content\": \"$REPORT_BASE64\"
-              }]
-            }"
-        env:
-          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+      #     curl --request POST \
+      #       --url https://api.brevo.com/v3/smtp/email \
+      #       --header "accept: application/json" \
+      #       --header "api-key: $BREVO_API_KEY" \
+      #       --header "content-type: application/json" \
+      #       --data "{
+      #         \"sender\": {
+      #           \"name\": \"CI Pipeline\",
+      #           \"email\": \"fitforge360.in@gmail.com\"
+      #         },
+      #         \"to\": [{
+      #           \"email\": \"fitforge360.in@gmail.com\"
+      #         }],
+      #         \"subject\": \"🚨 Critical Vulnerabilities Detected\",
+      #         \"textContent\": \"Critical vulnerabilities found. See attached Snyk report.\",
+      #         \"attachment\": [{
+      #           \"name\": \"snyk-report.html\",
+      #           \"content\": \"$REPORT_BASE64\"
+      #         }]
+      #       }"
+      #   env:
+      #     BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
 
   build-publish:
     name: "Build & Publish - ${{ inputs.service-name }}"
