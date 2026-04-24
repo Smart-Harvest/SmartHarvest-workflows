@@ -50,7 +50,7 @@ jobs:
 
       - name: Install Node dependencies
         if: inputs.runtime == 'node'
-        run: npm ci
+        run: npm install
 
       - name: Setup Python
         if: inputs.runtime == 'python'
