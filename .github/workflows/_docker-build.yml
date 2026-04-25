@@ -1,4 +1,4 @@
-# SmartHarvest — Reusable Docker Build + Trivy Scan
+# SmartHarvest — Reusable Docker Build + Trivy Scan 
 # Used by: PR (soft scan) and develop (strict scan before publish)
 name: _Docker Build — Build + Trivy Scan
 
@@ -19,7 +19,7 @@ on:
         required: false
         type: string
         default: "0"
-    outputs:
+    outputs: 
       trivy-critical:
         description: "Whether CRITICAL vulnerabilities were found (true/false)"
         value: ${{ jobs.build-scan.outputs.trivy_critical }}
