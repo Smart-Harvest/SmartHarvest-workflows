@@ -38,13 +38,14 @@ jobs:
 
       - name: Update image tag
         run: |
-          FILE="charts/microservices/${{ inputs.service-name }}/values.yaml"
+          FILE="charts/values.yaml"
+      
           if [ -f "$FILE" ]; then
-            echo "Updating $FILE with tag ${{ inputs.image-tag }}"
-            # Update the tag value. Ensure it's treated as a string to preserve formatting.
-            yq -i ".image.tag = \"${{ inputs.image-tag }}\"" "$FILE"
+            echo "Updating $FILE for service ${{ inputs.service-name }} with tag ${{ inputs.image-tag }}"
+            
+            yq -i ".${{ inputs.service-name }}.image.tag = \"${{ inputs.image-tag }}\"" "$FILE"
           else
-            echo "::error::File not found: $FILE (Is your service-name correct?)"
+            echo "::error::Global values.yaml not found!"
             exit 1
           fi
 
