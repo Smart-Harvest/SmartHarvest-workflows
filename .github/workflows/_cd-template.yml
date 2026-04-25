@@ -1,4 +1,8 @@
-name: CD — Update Helm Chart
+# SmartHarvest — Reusable CD Template
+# Updates centralized Helm values in SmartHarvest-HelmCharts repo
+# develop → values/values-dev.yaml
+# main    → values/values-prod.yaml
+name: CD — Update Helm Values
 
 on:
   workflow_call:
@@ -6,66 +10,84 @@ on:
       service-name:
         required: true
         type: string
-        description: "Name of the service folder in fitforge-charts/microservices"
+        description: "Service key under .services.* in Helm values (e.g., user-service, frontend-service)"
       image-tag:
         required: true
         type: string
-        description: "New image tag to update in values.yaml"
+        description: "New image tag to set in values file"
       environment:
         required: true
         type: string
-        description: "Target environment (main/develop)"
+        description: "Target environment (develop or main)"
     secrets:
       HELM_REPO_PAT:
         required: true
-        description: "PAT with push access to fitforge-charts repo"
+        description: "PAT with push access to SmartHarvest-HelmCharts repo"
 
 jobs:
   update-chart:
-    name: "CD: Update ${{ inputs.service-name }}"
+    name: "CD: ${{ inputs.service-name }} → ${{ inputs.environment }}"
     runs-on: ubuntu-latest
     steps:
+      # ─── Determine values file ───
+      - name: Set values file path
+        id: env
+        run: |
+          if [ "${{ inputs.environment }}" = "main" ]; then
+            echo "values_file=values/values-prod.yaml" >> $GITHUB_OUTPUT
+            echo "env_label=prod" >> $GITHUB_OUTPUT
+          else
+            echo "values_file=values/values-dev.yaml" >> $GITHUB_OUTPUT
+            echo "env_label=dev" >> $GITHUB_OUTPUT
+          fi
+
+      # ─── Checkout Helm Charts Repo ───
       - name: Checkout Charts Repository
         uses: actions/checkout@v4
         with:
-          repository: fitforge101/fitforge-charts
+          repository: Smart-Harvest/SmartHarvest-HelmCharts
           token: ${{ secrets.HELM_REPO_PAT }}
           path: charts
-          ref: ${{ inputs.environment }}
+          ref: main
 
       - name: Setup yq
         uses: mikefarah/yq@v4.44.1
 
+      # ─── Update image tag in centralized values ───
       - name: Update image tag
         run: |
-          FILE="charts/values.yaml"
-      
-          if [ -f "$FILE" ]; then
-            echo "Updating $FILE for service ${{ inputs.service-name }} with tag ${{ inputs.image-tag }}"
-            
-            yq -i ".${{ inputs.service-name }}.image.tag = \"${{ inputs.image-tag }}\"" "$FILE"
-          else
-            echo "::error::Global values.yaml not found!"
+          FILE="charts/${{ steps.env.outputs.values_file }}"
+
+          if [ ! -f "$FILE" ]; then
+            echo "::error::Values file not found: $FILE"
             exit 1
           fi
 
-      - name: Validate values.yaml
-        run: |
-          # Ensure the YAML is still valid after modification
-          yq eval '.' "charts/microservices/${{ inputs.service-name }}/values.yaml" > /dev/null
+          echo "📝 Updating $FILE"
+          echo "   Service: ${{ inputs.service-name }}"
+          echo "   Tag:     ${{ inputs.image-tag }}"
 
+          yq -i ".services.${{ inputs.service-name }}.image.tag = \"${{ inputs.image-tag }}\"" "$FILE"
+
+      # ─── Validate YAML ───
+      - name: Validate values file
+        run: |
+          yq eval '.' "charts/${{ steps.env.outputs.values_file }}" > /dev/null
+          echo "✅ YAML validation passed"
+
+      # ─── Commit and Push ───
       - name: Commit and Push changes
         run: |
           cd charts
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Stage the specific values file
-          git add microservices/${{ inputs.service-name }}/values.yaml
-          
+
+          git add ${{ steps.env.outputs.values_file }}
+
           if git diff --staged --quiet; then
-            echo "No changes detected in values.yaml (tag might already be up to date)"
+            echo "⏭️ No changes detected (tag already up to date)"
           else
-            git commit -m "cd: update ${{ inputs.service-name }} image tag to ${{ inputs.image-tag }} [${{ inputs.environment }}]"
-            git push origin ${{ inputs.environment }}
+            git commit -m "cd: update ${{ inputs.service-name }} image to ${{ inputs.image-tag }} [${{ steps.env.outputs.env_label }}]"
+            git push origin main
+            echo "✅ Pushed update to SmartHarvest-HelmCharts"
           fi

@@ -1,11 +1,12 @@
-# fitforge-shared/.github/workflows/_docker-build.yml
-name: _Docker Build — Temp Build + Trivy Scan
+# SmartHarvest — Reusable Docker Build + Trivy Scan
+# Used by: PR (soft scan) and develop (strict scan before publish)
+name: _Docker Build — Build + Trivy Scan
 
 on:
   workflow_call:
     inputs:
       service-name:
-        description: "Service name for image naming and reports"
+        description: "Service name (must match Helm key under .services.*)"
         required: true
         type: string
       service-path:
@@ -13,14 +14,19 @@ on:
         required: false
         type: string
         default: "."
+      fail-on-critical:
+        description: "Trivy exit-code: 1 = fail on CRITICAL (develop), 0 = soft scan (PR)"
+        required: false
+        type: string
+        default: "0"
     outputs:
       trivy-critical:
-        description: "Whether CRITICAL vulnerabilities were found in the image (true/false)"
+        description: "Whether CRITICAL vulnerabilities were found (true/false)"
         value: ${{ jobs.build-scan.outputs.trivy_critical }}
 
 jobs:
   build-scan:
-    name: Build & Scan Image
+    name: "Build & Scan — ${{ inputs.service-name }}"
     runs-on: ubuntu-latest
     outputs:
       trivy_critical: ${{ steps.trivy_check.outputs.critical_found }}
@@ -32,21 +38,21 @@ jobs:
         uses: actions/checkout@v4
 
       # ─── Build Temp Image (local only, never pushed) ───
-      - name: Build Docker Image (Temp)
+      - name: Build Docker Image
         run: |
-          docker build -t ${{ inputs.service-name }}:pr-test .
-          echo "✅ Temp image built: ${{ inputs.service-name }}:pr-test"
+          docker build -t ${{ inputs.service-name }}:${{ github.sha }} .
+          echo "✅ Image built: ${{ inputs.service-name }}:${{ github.sha }}"
 
       # ─── Trivy Scan ───
       - name: Trivy Vulnerability Scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ inputs.service-name }}:pr-test"
+          image-ref: "${{ inputs.service-name }}:${{ github.sha }}"
           format: "table"
           output: "${{ github.workspace }}/trivy-report-${{ inputs.service-name }}.txt"
           scan-type: "image"
           severity: "CRITICAL,HIGH"
-          exit-code: "0"
+          exit-code: ${{ inputs.fail-on-critical }}
           ignore-unfixed: true
           vuln-type: "os,library"
 
@@ -58,11 +64,13 @@ jobs:
           path: "${{ github.workspace }}/trivy-report-${{ inputs.service-name }}.txt"
           retention-days: 14
 
-      # ─── Critical Check (output only, no email!) ───
+      # ─── Critical Check (output for downstream decisions) ───
       - name: Check Trivy for Criticals
         id: trivy_check
+        if: always()
         run: |
-          if grep -qE "CRITICAL" "${{ github.workspace }}/trivy-report-${{ inputs.service-name }}.txt"; then
+          REPORT="${{ github.workspace }}/trivy-report-${{ inputs.service-name }}.txt"
+          if [ -f "$REPORT" ] && grep -qE "CRITICAL" "$REPORT"; then
             echo "critical_found=true" >> $GITHUB_OUTPUT
             echo "⚠️ CRITICAL vulnerabilities found!"
           else
