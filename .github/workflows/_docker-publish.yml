@@ -19,6 +19,10 @@ on:
         description: "Environment branch (develop or main)"
         required: true
         type: string
+      image-tag:
+        description: "Explicit image tag to use (for manual semver)"
+        required: false
+        type: string
     secrets:
       DOCKER_USERNAME:
         required: true
@@ -49,21 +53,15 @@ jobs:
           fetch-depth: 0
 
       # ─── Version Tagging ───
-      - name: Calculate Semantic Version (Main Only)
-        id: semver
-        if: inputs.environment == 'main'
-        uses: mathieudutour/github-tag-action@v6.2
-        with:
-          github_token: ${{ github.token }}
-          tag_prefix: ${{ inputs.service-name }}-v
-          dry_run: true
-          default_bump: patch
-
       - name: Generate Tag
         id: tag
         run: |
           if [ "${{ inputs.environment }}" = "main" ]; then
-            TAG="${{ steps.semver.outputs.new_tag }}"
+            TAG="${{ inputs.image-tag }}"
+            if [ -z "$TAG" ]; then
+              echo "❌ Error: image-tag input is required for main environment (manual semver mode)"
+              exit 1
+            fi
           else
             TAG="dev-${GITHUB_SHA}"
           fi
@@ -86,36 +84,18 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      # ═══════════════════════════════════════════════════════
-      # DEVELOP: Build + Push SHA-tagged image
-      # ═══════════════════════════════════════════════════════
-      - name: Build Docker Image (develop only)
+      # ═══════════════════════════════════════════════════════════
+      # DOCKER BUILD & PUSH
+      # ═══════════════════════════════════════════════════════════
+      - name: Build Docker Image
         id: docker_build
-        if: inputs.environment == 'develop' && steps.image_check.outputs.exists != 'true'
+        if: steps.image_check.outputs.exists != 'true'
         run: |
           docker build -t ${{ steps.tag.outputs.full_image }} .
           echo "built=true" >> $GITHUB_OUTPUT
 
-      - name: Push Docker Image (develop only)
-        if: inputs.environment == 'develop' && steps.docker_build.outputs.built == 'true'
-        run: |
-          docker push ${{ steps.tag.outputs.full_image }}
-          echo "✅ Pushed: ${{ steps.tag.outputs.full_image }}"
-
-      # ═══════════════════════════════════════════════════════
-      # MAIN: Pull SHA image → Retag to semver → Push (NO rebuild)
-      # ═══════════════════════════════════════════════════════
-      - name: Pull develop image by SHA (main only)
-        if: inputs.environment == 'main' && steps.image_check.outputs.exists != 'true'
-        run: |
-          SHA_IMAGE="${{ secrets.DOCKER_USERNAME }}/${{ inputs.service-name }}:dev-${GITHUB_SHA}"
-          echo "📥 Pulling: $SHA_IMAGE"
-          docker pull "$SHA_IMAGE"
-          docker tag "$SHA_IMAGE" ${{ steps.tag.outputs.full_image }}
-          echo "🏷️ Retagged to: ${{ steps.tag.outputs.full_image }}"
-
-      - name: Push retagged image (main only)
-        if: inputs.environment == 'main' && steps.image_check.outputs.exists != 'true'
+      - name: Push Docker Image
+        if: steps.docker_build.outputs.built == 'true'
         run: |
           docker push ${{ steps.tag.outputs.full_image }}
           echo "✅ Pushed: ${{ steps.tag.outputs.full_image }}"
